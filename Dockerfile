@@ -12,4 +12,4 @@ COPY . .
 
 EXPOSE 2567
 
-CMD [ "npm", "run", "build", "&&", "npm", "start" ]
+CMD [ "npm", "run", "build:backend", "&&", "npm", "run", "build:frontend", "&&", "npm", "start" ]
