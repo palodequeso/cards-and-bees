@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <title>Cards and Bees</title>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap"
+        />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/icon?family=Material+Icons"
+        />
+        <style>
+            #rooms {
+                display: none;
+            }
+
+            #game {
+                display: none;
+            }
+
+            #main-menu {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 90vh;
+            }
+
+            #solitaire-menu {
+                display: none;
+            }
+            html, body {
+              background-color: #326632;
+              color: white;
+              font-family: 'Roboto', sans-serif;
+            }
+
+            button {
+              background-color: #333333;
+              border: none;
+              color: white;
+              padding: 15px 32px;
+              text-align: center;
+              text-decoration: none;
+              display: inline-block;
+              font-size: 16px;
+              margin: 4px 2px;
+              cursor: pointer;
+              border-radius: 10px;
+            }
+
+            button:hover {
+                background-color: #555555;
+            }
+
+            button:active {
+                background-color: #777777;
+            }
+
+            button:disabled {
+                background-color: #888888;
+                color: #cccccc;
+                cursor: not-allowed;
+            }
+
+            input[type=text] {
+              padding: 12px 20px;
+              margin: 8px 0;
+              box-sizing: border-box;
+              border: 2px solid #555555;
+              background-color: #333333;
+              color: white;
+              border-radius: 10px;
+            }
+
+            #rooms-container {
+              height: calc(100vh - 32px);
+            }
+
+            .bee {
+              position: fixed;
+              z-index: 100;
+              top: 0;
+              left: 0;
+              width: 12px;
+              height: 12px;
+              background-image: url('./static/bee-sprite.png');
+              background-size: 100% 300%;
+              image-rendering: pixelated;
+              transform: scale(2, 2);
+            }
+
+            .card {
+              padding: 0;
+              margin: 0;
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 72px;
+              height: 105px;
+              background-size: 100% 100%;
+              image-rendering: pixelated;
+              background-color: #000000 !important;
+              border-radius: 10px;
+              box-shadow: 2px 2px 2px 2px rgba(0, 0, 0, 0.5);
+            }
+
+            #game {
+              height: calc(100vh - 32px);
+              background-color: #326632;
+            }
+            .card-stack {
+              position: absolute;
+              display: inline-flex;
+              justify-content: center;
+              align-items: center;
+              flex-direction: column;
+              width: 80px;
+              height: 132px;
+              border: 1px solid #FFFFFF;
+              border-radius: 10px;
+              padding: 4px;
+            }
+
+            .stack-label {
+                position: absolute;
+                top: 2px;
+                left: 4px;
+                width: 100%;
+                height: 20px;
+            }
+
+            .player-container {
+              position: relative;
+              width: 300px;
+              height: 80px;
+              border: 1px solid #FFFFFF;
+              border-radius: 10px;
+              padding: 4px;
+            }
+
+            #logout-button {
+              position: fixed;
+              top: 0;
+              right: 0;
+            }
+
+            #chat-area {
+              position: fixed;
+              bottom: 10px;
+              right: 10px;
+              width: 300px;
+              height: 200px;
+              background-color: #1b311b;
+              padding: 4px;
+              color: white;
+            }
+
+            #chat-messages {
+              height: 160px;
+              width: 200px;
+              overflow-y: auto;
+              overflow-x: hidden;
+            }
+
+            .chat-message {
+              font-size: 14px;
+            }
+
+            #chat-input {
+              width: 294px;
+              position: absolute;
+              bottom: 2px;
+            }
+
+        </style>
+        <script type="text/javascript" src="dist/frontend/index.js"></script>
+    </head>
+    <body>
+        <header>
+            Cards & Bees
+        </header>
+        <div id="app-container">
+            <div id="bees"></div>
+            <div id="main-menu">
+                <div><input id="main-menu-username-input" type="text" placeholder="username"></input>
+                <button id="main-menu-play-together">Play Together</button></div>
+                <div style="padding-top: 8px;"><button id="main-menu-solitaire">Solitaire</button></div>
+            </div>
+            <div id="rooms">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Created</th>
+                            <th>Name</th>
+                            <th>People</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="rooms-table"></tbody>
+                </table>
+                <div>
+                    <h5>Create a Room</h5>
+                    <input id="room-name-input" type="text" placeholder="Room Name"></input>
+                    <button id="create-room">Create Room</button>
+                </div>
+            </div>
+            <div id="solitaire-menu">
+                <button class="solitaire-game" data-gamename="scoundrel">Soundrel</button>
+                <!-- <button class="solitaire-game" data-gamename="klondike-draw-3">Klondike Draw 3</button>
+                <button class="solitaire-game" data-gamename="klondike">Klondike</button>
+                <button class="solitaire-game" data-gamename="aces-up">Aces Up</button> -->
+            </div>
+            <div id="game"></div>
+        </div>
+    </body>
+</html>
