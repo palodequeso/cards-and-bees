@@ -71,8 +71,12 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
   private async _handleDrawCard(client: Client, data: any) {
     const { value } = data;
     const player = this._getPlayer(client);
+    if (!player) {
+      console.error("Player not found for drawing card");
+      return;
+    }
     const fromStack = this.state.cardStacks.find((s) => s.id === value);
-    if (fromStack.stack.length === 0) {
+    if (!fromStack || fromStack.stack.length === 0) {
       return;
     }
 
@@ -98,18 +102,23 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
       return;
     }
     // reorder player hand to match the new order of card data
-    player.hand = order.map((cardData: any) => {
+    const reorderedHand = order.map((cardData: any) => {
       const card = player.hand.find(
         (c) =>
           c.value.get("rank") === cardData.rank &&
           c.value.get("suit") === cardData.suit,
       );
       if (!card) {
-        console.error("Card not found for reordering hand");
-        return;
+        console.error("Card not found for reordering hand", cardData);
+        return null;
       }
       return card;
-    });
+    }).filter((card) => card !== null);
+    
+    // Only update if all cards were found
+    if (reorderedHand.length === order.length) {
+      player.hand = reorderedHand;
+    }
   }
 
   private async _handleMove(client: Client, data: any) {
@@ -117,6 +126,10 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
     console.log(username, from, to, card);
     if (from === "hand" && to === "table") {
       const player = this._getPlayer(client);
+      if (!player) {
+        console.error("Player not found for move");
+        return;
+      }
       const cardIndex = player.hand.findIndex(
         (c) =>
           c.value.get("rank") === card.value.rank &&
@@ -165,6 +178,10 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
       const { stack } = data;
       const toStack = this.state.cardStacks.find((s) => s.id === stack);
       const player = this._getPlayer(client);
+      if (!player) {
+        console.error("Player not found for move");
+        return;
+      }
       const cardIndex = player.hand.findIndex(
         (c) =>
           c.value.get("rank") === card.value.rank &&
@@ -179,6 +196,10 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
     } else if (from === "table" && to === "hand") {
       const { playerId, card } = data;
       const player = this._getPlayerById(playerId);
+      if (!player) {
+        console.error("Player not found for move to hand");
+        return;
+      }
       const cardIndex = this.state.tableCards.findIndex(
         (c) =>
           c.value.get("rank") === card.value.rank &&
@@ -245,6 +266,10 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
   // client left: bring your own logic
   async onLeave(client: Client, consented: boolean) {
     console.log("client left", client.sessionId, consented);
+    const playerIndex = this.state.players.findIndex((p) => p.id === client.sessionId);
+    if (playerIndex !== -1) {
+      this.state.players.splice(playerIndex, 1);
+    }
   }
 
   // room has been disposed: bring your own logic

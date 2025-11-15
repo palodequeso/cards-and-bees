@@ -52,6 +52,15 @@ export default class Game {
   }
 
   updatePlayers() {
+    // Remove players that are no longer in the state
+    for (const playerId in this.players) {
+      const found = this.state.players.find((p) => p.id === playerId);
+      if (!found) {
+        this.players[playerId].node.remove();
+        delete this.players[playerId];
+      }
+    }
+    
     for (const player of this.state.players) {
       const handCards: CardData[] = [];
       for (const handCard of player.hand) {
@@ -80,9 +89,9 @@ export default class Game {
 
   updateCards() {
     const tableCards = this.state.tableCards;
-    let i = 0;
     const indexesToRemove = [];
-    for (const existingCard of this.cards) {
+    for (let i = 0; i < this.cards.length; i++) {
+      const existingCard = this.cards[i];
       const found = tableCards.find(
         (c) =>
           c.value.rank === existingCard.cardData.rank &&
@@ -93,10 +102,10 @@ export default class Game {
         existingCard.destroy();
         indexesToRemove.push(i);
       }
-      i += 1;
     }
-    for (const index of indexesToRemove) {
-      this.cards.splice(index, 1);
+    // Remove in reverse order to maintain correct indices
+    for (let i = indexesToRemove.length - 1; i >= 0; i--) {
+      this.cards.splice(indexesToRemove[i], 1);
     }
     for (const cardItem of tableCards) {
       const existingCard = this.cards.find(
@@ -339,6 +348,8 @@ export default class Game {
     this.updateStacks();
     this.updateCards();
     this.updatePlayers();
-    this.chat.renderMessages();
+    if (this.chat) {
+      this.chat.renderMessages();
+    }
   }
 }

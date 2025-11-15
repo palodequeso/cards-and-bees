@@ -17,7 +17,7 @@ export default class Player {
     hand: CardData[],
     playerIndex: number,
     cardMovedToTable: (c: Card) => void,
-    handCardsReordered: () => void,
+    handCardsReordered: (p: Player, newOrder: CardData[]) => void,
   ) {
     this.isSelf = isSelf;
     this.player = player;
@@ -61,8 +61,8 @@ export default class Player {
 
   private updateOwnHand() {
     const indexesToRemove = [];
-    let i = 0;
-    for (const card of this.handCards) {
+    for (let i = 0; i < this.handCards.length; i++) {
+      const card = this.handCards[i];
       // remove cards that are no longer in hand
       const foundInHand = this.hand.find(
         (c) => c.rank === card.cardData.rank && c.suit === card.cardData.suit,
@@ -72,10 +72,10 @@ export default class Player {
         card.destroy();
         indexesToRemove.push(i);
       }
-      i += 1;
     }
-    for (const index of indexesToRemove) {
-      this.handCards.splice(index, 1);
+    // Remove in reverse order to maintain correct indices
+    for (let i = indexesToRemove.length - 1; i >= 0; i--) {
+      this.handCards.splice(indexesToRemove[i], 1);
     }
     for (const cardData of this.hand) {
       if (
@@ -185,10 +185,10 @@ export default class Player {
       this.cardMovedToTable(c);
       // TODO: Remove card from hand
       const cardIndex = this.hand.findIndex(
-        (c) => c.rank === c.rank && c.suit === c.suit,
+        (cardData) => cardData.rank === c.cardData.rank && cardData.suit === c.cardData.suit,
       );
       if (cardIndex === -1) {
-        console.error("Oops!");
+        console.error("Oops! Card not found in hand:", c.cardData);
         return;
       }
       this.hand.splice(cardIndex, 1);

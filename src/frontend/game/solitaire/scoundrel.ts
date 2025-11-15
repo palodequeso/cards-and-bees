@@ -98,7 +98,6 @@ export default class SocoundrelSolitaire extends Solitaire {
     const weaponLabel = document.createElement("div");
     weaponLabel.classList.add("weapon-label");
     weaponLabel.style.position = "absolute";
-    weaponLabel.style.fontSize = "12px";
     weaponLabel.style.fontSize = "20px";
     weaponLabel.style.left = "12px";
     weaponLabel.style.fontWeight = "bold";
@@ -125,13 +124,12 @@ export default class SocoundrelSolitaire extends Solitaire {
     const cardsToDraw = 4 - this.tableau.length;
     const drawnCardData = [];
     for (let i = 0; i < cardsToDraw; i += 1) {
-      drawnCardData.push(this.drawStack.popTopCard());
+      const cardData = this.drawStack.popTopCard();
+      if (cardData) {
+        drawnCardData.push(cardData);
+      }
     }
     console.log("room cards", drawnCardData);
-
-    if (this.tableau.length > 0) {
-      this.tableau[0].node.style.left = "100px";
-    }
 
     for (const cardData of drawnCardData) {
       cardData.faceDown = false;
@@ -157,7 +155,7 @@ export default class SocoundrelSolitaire extends Solitaire {
   public run() {
     console.log("run");
     // run takes the tableau if it hasn't been touched, and shuffles it and placese it at the end of the draw stack
-    if (this.tableau.length !== 4 || this.ranLastRoom) {
+    if (this.tableau.length === 0 || this.ranLastRoom) {
       return;
     }
 
@@ -243,8 +241,9 @@ export default class SocoundrelSolitaire extends Solitaire {
           this.usedHealthThisRoom = true;
           this.modifyHealth(this.rankToStrength(card.cardData.rank));
         }
+        const heartCardData = card.cardData;
         this.removeCardFromTableauAndDestroy(card);
-        this.discardCard(card);
+        this.discardStack.pushCard(heartCardData);
         if (this.tableau.length === 1) {
           this.enterRoom();
         }
@@ -340,8 +339,9 @@ export default class SocoundrelSolitaire extends Solitaire {
     this.fightFistsButton!.disabled = true;
     this.fightWeaponButton!.disabled = true;
     this.modifyHealth(-this.rankToStrength(this.fightingEnemy.cardData.rank));
+    const fistCardData = this.fightingEnemy.cardData;
     this.removeCardFromTableauAndDestroy(this.fightingEnemy);
-    this.discardCard(this.fightingEnemy);
+    this.discardStack.pushCard(fistCardData);
     if (this.tableau.length === 1) {
       this.enterRoom();
     }

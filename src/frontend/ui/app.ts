@@ -2,6 +2,7 @@ import Bee from "./bee";
 import { Client } from "colyseus.js";
 import Game from "../game/game";
 import SocoundrelSolitaire from "../game/solitaire/scoundrel";
+import KlondikeSolitaire from "../game/solitaire/klondike";
 
 function buildWSUrl(portOverride: number | null = null) {
   const host = window.document.location.host.replace(/:.*/, "");
@@ -107,6 +108,19 @@ export default class App {
         game = new SocoundrelSolitaire(
           this.appNode.querySelector("#game") as HTMLDivElement,
         );
+        break;
+      case "klondike":
+        game = new KlondikeSolitaire(
+          this.appNode.querySelector("#game") as HTMLDivElement,
+          1
+        );
+        break;
+      case "klondike-draw-3":
+        game = new KlondikeSolitaire(
+          this.appNode.querySelector("#game") as HTMLDivElement,
+          3
+        );
+        break;
     }
   }
 
