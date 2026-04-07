@@ -1,8 +1,8 @@
-import Card, { Rank, Suit } from "../card";
+import Card, { CardData, Rank, Suit } from "../card";
 import Stack from "../stack";
 import Solitaire from "./solitaire";
 
-export default class SocoundrelSolitaire extends Solitaire {
+export default class ScoundrelSolitaire extends Solitaire {
   private drawStack: Stack;
   private discardStack: Stack;
   private tableau: Card[];
@@ -16,225 +16,249 @@ export default class SocoundrelSolitaire extends Solitaire {
   private fightingEnemy: Card | null = null;
   private fightWeaponButton: HTMLButtonElement | null = null;
   private fightFistsButton: HTMLButtonElement | null = null;
+  private roomArea: HTMLDivElement | null = null;
+  private weaponArea: HTMLDivElement | null = null;
+  private stacksContainer: HTMLDivElement | null = null;
+  private roomCardArea: HTMLDivElement | null = null;
+  private weaponCardArea: HTMLDivElement | null = null;
 
-  constructor(htmlNode: HTMLDivElement) {
-    super(htmlNode, "scoundrel");
+  constructor(htmlNode: HTMLDivElement, onBack?: () => void, onNewGame?: () => void) {
+    super(htmlNode, "scoundrel", onBack, onNewGame);
+    this.buildLayout();
     this.setupCards();
-    this.setupControls();
     this.enterRoom();
   }
 
+  private buildLayout() {
+    this.appNode.style.display = "flex";
+    this.appNode.style.flexDirection = "column";
+    this.appNode.style.alignItems = "center";
+
+    // ── Top bar ──
+    const topBar = document.createElement("div");
+    topBar.className = "sol-top-bar";
+    const backBtn = document.createElement("button");
+    backBtn.className = "sol-btn";
+    backBtn.textContent = "← Back";
+    backBtn.addEventListener("click", () => this.onBack());
+    topBar.appendChild(backBtn);
+    this.appNode.appendChild(topBar);
+
+    const newGameBtn = document.createElement("button");
+    newGameBtn.className = "sol-btn";
+    newGameBtn.textContent = "New Game";
+    newGameBtn.addEventListener("click", () => this.onNewGame());
+    topBar.appendChild(newGameBtn);
+
+    this.healthLabel = document.createElement("div");
+    this.healthLabel.className = "sol-health";
+    this.healthLabel.textContent = "♥ 20";
+    topBar.appendChild(this.healthLabel);
+
+    const title = document.createElement("div");
+    title.className = "sol-title";
+    title.textContent = "Scoundrel";
+    topBar.appendChild(title);
+
+    const warning = document.createElement("div");
+    warning.className = "sol-warning";
+    warning.textContent = "Beta — may have bugs";
+    topBar.appendChild(warning);
+
+    // ── Centered game column ──
+    const gameCol = document.createElement("div");
+    gameCol.className = "scoundrel-layout";
+    this.appNode.appendChild(gameCol);
+
+    // Row 1: Dungeon Deck (draw + discard) side by side with Dungeon Room
+    const topSection = document.createElement("div");
+    topSection.className = "scoundrel-top";
+    gameCol.appendChild(topSection);
+
+    // Deck side
+    const stacksCol = document.createElement("div");
+    stacksCol.className = "scoundrel-deck";
+    topSection.appendChild(stacksCol);
+    const stacksLabel = document.createElement("div");
+    stacksLabel.className = "sol-section-label";
+    stacksLabel.textContent = "Dungeon Deck";
+    stacksCol.appendChild(stacksLabel);
+    this.stacksContainer = stacksCol;
+
+    // Room side
+    this.roomArea = document.createElement("div");
+    this.roomArea.className = "scoundrel-room";
+    topSection.appendChild(this.roomArea);
+    const roomLabel = document.createElement("div");
+    roomLabel.className = "sol-section-label";
+    roomLabel.textContent = "Dungeon Room";
+    this.roomArea.appendChild(roomLabel);
+    this.roomCardArea = document.createElement("div");
+    this.roomCardArea.className = "sol-room-cards";
+    this.roomArea.appendChild(this.roomCardArea);
+
+    // Row 2: Actions (horizontal button row)
+    const actionsRow = document.createElement("div");
+    actionsRow.className = "scoundrel-actions";
+    gameCol.appendChild(actionsRow);
+
+    this.runButton = document.createElement("button");
+    this.runButton.className = "sol-btn";
+    this.runButton.textContent = "🏃 Run";
+    this.runButton.disabled = true;
+    this.runButton.addEventListener("click", this.run.bind(this));
+    actionsRow.appendChild(this.runButton);
+
+    this.fightWeaponButton = document.createElement("button");
+    this.fightWeaponButton.className = "sol-btn";
+    this.fightWeaponButton.textContent = "🗡️ Fight w/ Weapon";
+    this.fightWeaponButton.disabled = true;
+    this.fightWeaponButton.addEventListener("click", () => {
+      if (this.weapon)
+        this.fightEnemyWithWeapon();
+    });
+    actionsRow.appendChild(this.fightWeaponButton);
+
+    this.fightFistsButton = document.createElement("button");
+    this.fightFistsButton.className = "sol-btn";
+    this.fightFistsButton.textContent = "👊 Fight w/ Fists";
+    this.fightFistsButton.disabled = true;
+    this.fightFistsButton.addEventListener("click", () => {
+      this.fightEnemyWithFists();
+    });
+    actionsRow.appendChild(this.fightFistsButton);
+
+    // Row 3: Weapon area
+    this.weaponArea = document.createElement("div");
+    this.weaponArea.className = "scoundrel-weapon";
+    gameCol.appendChild(this.weaponArea);
+
+    const weaponLabel = document.createElement("div");
+    weaponLabel.className = "sol-section-label";
+    weaponLabel.textContent = "Equipped Weapon";
+    this.weaponArea.appendChild(weaponLabel);
+    this.weaponCardArea = document.createElement("div");
+    this.weaponCardArea.className = "sol-weapon-cards";
+    this.weaponArea.appendChild(this.weaponCardArea);
+  }
+
   public setupCards() {
-    // draw cards is every card except A, K, Q, J of Diamonds and Hearts
     let drawCardData = Solitaire.generateDeck(
       (c) =>
         [Rank.A, Rank.K, Rank.Q, Rank.J].includes(c.rank) &&
         [Suit.Diamonds, Suit.Hearts].includes(c.suit),
     );
-    // shuffle draw cards
     drawCardData = drawCardData.sort(() => Math.random() - 0.5);
-    console.log(drawCardData);
-    this.drawStack = new Stack("Draw", drawCardData, 100, 100, true, () => {});
-    this.discardStack = new Stack("Discard", [], 200, 100, true, () => {});
+    this.drawStack = new Stack("Draw", drawCardData, 0, 0, true, () => {});
+    this.discardStack = new Stack("Discard", [], 0, 0, true, () => {});
     this.tableau = [];
-    this.appNode.append(this.drawStack.node);
-    this.appNode.append(this.discardStack.node);
-  }
-
-  public setupControls() {
-    this.runButton = document.createElement("button");
-    this.runButton.innerHTML = "Run";
-    this.runButton.style.position = "absolute";
-    this.runButton.style.left = "324px";
-    this.runButton.style.top = "100px";
-    this.runButton.disabled = true;
-    this.runButton.addEventListener("click", this.run.bind(this));
-    this.appNode.append(this.runButton);
-    this.healthLabel = document.createElement("div");
-    this.healthLabel.classList.add("health-label");
-    this.healthLabel.style.position = "absolute";
-    this.healthLabel.style.fontSize = "32px";
-    this.healthLabel.style.left = "24px";
-    this.healthLabel.style.top = "36px";
-    this.healthLabel.style.color = "#661111";
-    this.healthLabel.style.fontWeight = "bold";
-    this.healthLabel.innerHTML = "Health: 20";
-    this.appNode.append(this.healthLabel);
-    this.fightWeaponButton = document.createElement("button");
-    this.fightWeaponButton.innerHTML = "Fight with Weapon";
-    this.fightWeaponButton.style.position = "absolute";
-    this.fightWeaponButton.style.left = "324px";
-    this.fightWeaponButton.style.top = "164px";
-    this.fightWeaponButton.disabled = true;
-    this.fightWeaponButton.addEventListener("click", () => {
-      if (this.weapon) {
-        this.fightEnemyWithWeapon();
-      }
-    });
-    this.appNode.append(this.fightWeaponButton);
-    this.fightFistsButton = document.createElement("button");
-    this.fightFistsButton.innerHTML = "Fight with Fists";
-    this.fightFistsButton.style.position = "absolute";
-    this.fightFistsButton.style.left = "324px";
-    this.fightFistsButton.style.top = "228px";
-    this.fightFistsButton.disabled = true;
-    this.fightFistsButton.addEventListener("click", () => {
-      this.fightEnemyWithFists();
-    });
-    this.appNode.append(this.fightFistsButton);
-
-    // some extra labels
-    const roomLabel = document.createElement("div");
-    roomLabel.classList.add("room-label");
-    roomLabel.style.position = "absolute";
-    roomLabel.style.fontSize = "20px";
-    roomLabel.style.left = "12px";
-    roomLabel.style.top = "316px";
-    roomLabel.style.color = "#333";
-    roomLabel.style.fontWeight = "bold";
-    roomLabel.innerHTML = "Dungeon<br>Room";
-    this.appNode.append(roomLabel);
-
-    const weaponLabel = document.createElement("div");
-    weaponLabel.classList.add("weapon-label");
-    weaponLabel.style.position = "absolute";
-    weaponLabel.style.fontSize = "20px";
-    weaponLabel.style.left = "12px";
-    weaponLabel.style.fontWeight = "bold";
-    weaponLabel.style.top = "448px";
-    weaponLabel.style.color = "#333";
-    weaponLabel.innerHTML = "Weapon<br>Equipped";
-    this.appNode.append(weaponLabel);
-
-    const bugWarningLabel = document.createElement("div");
-    bugWarningLabel.classList.add("bug-warning-label");
-    bugWarningLabel.style.position = "absolute";
-    bugWarningLabel.style.fontSize = "16px";
-    bugWarningLabel.style.left = "200px";
-    bugWarningLabel.style.top = "36px";
-    bugWarningLabel.style.color = "#000000";
-    bugWarningLabel.style.fontWeight = "bold";
-    bugWarningLabel.innerHTML = "Note: This game is still in development. There may be bugs and incomplete features.<br>Specifically the room tableau cards can make ghosts it seems.";
-    this.appNode.append(bugWarningLabel);
+    const stackRow = document.createElement("div");
+    stackRow.className = "sol-stack-row";
+    stackRow.appendChild(this.drawStack.node);
+    stackRow.appendChild(this.discardStack.node);
+    this.stacksContainer.appendChild(stackRow);
   }
 
   public enterRoom() {
-    console.log("enter room");
-    // draw up to 4 cards from draw stack
     const cardsToDraw = 4 - this.tableau.length;
     const drawnCardData = [];
     for (let i = 0; i < cardsToDraw; i += 1) {
       const cardData = this.drawStack.popTopCard();
-      if (cardData) {
+      if (cardData)
         drawnCardData.push(cardData);
-      }
     }
-    console.log("room cards", drawnCardData);
 
     for (const cardData of drawnCardData) {
       cardData.faceDown = false;
-      const card = new Card(
-        cardData,
-        this.tableau.length * 100 + 100,
-        300,
-        null,
-        null,
-        this.selectFromTableau.bind(this),
-      );
+      const card = new Card(cardData, 0, 0, null, null, this.selectFromTableau.bind(this));
       card.setDraggable(false);
+      card.node.style.position = "relative";
       this.tableau.push(card);
-      this.appNode.append(card.node);
+      const wrap = document.createElement("div");
+      wrap.className = "sol-room-card-wrap";
+      wrap.appendChild(card.node);
+      const label = document.createElement("div");
+      label.className = "sol-room-card-label";
+      label.textContent = this.cardLabel(cardData);
+      wrap.appendChild(label);
+      this.roomCardArea.appendChild(wrap);
     }
 
     this.runButton.disabled = this.ranLastRoom;
     this.ranLastRoom = false;
     this.usedHealthThisRoom = false;
-    console.log('run button disabled', this.runButton.disabled);
   }
 
   public run() {
-    console.log("run");
-    // run takes the tableau if it hasn't been touched, and shuffles it and placese it at the end of the draw stack
-    if (this.tableau.length === 0 || this.ranLastRoom) {
+    if (this.tableau.length === 0 || this.ranLastRoom)
       return;
-    }
-
     this.ranLastRoom = true;
-    // shuffle tableau
     this.tableau = this.tableau.sort(() => Math.random() - 0.5);
-    // place tableau at the end of the draw stack
     for (const card of this.tableau) {
       card.cardData.faceDown = true;
       this.drawStack.placeCardBelow(card.cardData);
     }
-    // clear tableau
     for (const card of this.tableau) {
-      card.node.remove();
+      const wrap = card.node.parentElement;
+      if (wrap && wrap.classList.contains("sol-room-card-wrap")) {
+        wrap.remove();
+      } else {
+        card.node.remove();
+      }
       card.destroy();
     }
     this.tableau = [];
     this.enterRoom();
   }
 
+  private cardLabel(cd: CardData): string {
+    const str = this.rankToStrength(cd.rank);
+    switch (cd.suit) {
+      case Suit.Diamonds: return `🗡️ ${str}`;
+      case Suit.Hearts: return `❤️ +${str}`;
+      case Suit.Spades: return `💀 ${str}`;
+      case Suit.Clubs: return `💀 ${str}`;
+      default: return "";
+    }
+  }
+
   public rankToStrength(rank: Rank): number {
     switch (rank) {
-      case Rank.A:
-        return 14;
-      case Rank.J:
-        return 11;
-      case Rank.Q:
-        return 12;
-      case Rank.K:
-        return 13;
-      case Rank.Ten:
-        return 10;
-      case Rank.Nine:
-        return 9;
-      case Rank.Eight:
-        return 8;
-      case Rank.Seven:
-        return 7;
-      case Rank.Six:
-        return 6;
-      case Rank.Five:
-        return 5;
-      case Rank.Four:
-        return 4;
-      case Rank.Three:
-        return 3;
-      case Rank.Two:
-        return 2;
-      default:
-        return parseInt(rank, 10);
+      case Rank.A: return 14;
+      case Rank.J: return 11;
+      case Rank.Q: return 12;
+      case Rank.K: return 13;
+      case Rank.Ten: return 10;
+      case Rank.Nine: return 9;
+      case Rank.Eight: return 8;
+      case Rank.Seven: return 7;
+      case Rank.Six: return 6;
+      case Rank.Five: return 5;
+      case Rank.Four: return 4;
+      case Rank.Three: return 3;
+      case Rank.Two: return 2;
+      default: return parseInt(rank, 10);
     }
   }
 
   public getWeaponStrength() {
-    if (!this.weapon) {
+    if (!this.weapon)
       return 0;
-    }
     let str = this.rankToStrength(this.weapon.cardData.rank);
     if (this.weaponFoes.length > 0) {
-      str = Math.min(
-        str,
-        this.rankToStrength(
-          this.weaponFoes[this.weaponFoes.length - 1].cardData.rank,
-        ),
-      );
+      str = Math.min(str, this.rankToStrength(this.weaponFoes[this.weaponFoes.length - 1].cardData.rank));
     }
     return str;
   }
 
   public selectFromTableau(card: Card) {
-    console.log("card selected", card);
     this.runButton.disabled = true;
     switch (card.cardData.suit) {
       case Suit.Diamonds:
         this.equipWeapon(card);
         this.removeCardFromTableauAndDestroy(card);
-        if (this.tableau.length === 1) {
+        if (this.tableau.length === 1)
           this.enterRoom();
-        }
         break;
       case Suit.Hearts:
         if (!this.usedHealthThisRoom) {
@@ -244,9 +268,8 @@ export default class SocoundrelSolitaire extends Solitaire {
         const heartCardData = card.cardData;
         this.removeCardFromTableauAndDestroy(card);
         this.discardStack.pushCard(heartCardData);
-        if (this.tableau.length === 1) {
+        if (this.tableau.length === 1)
           this.enterRoom();
-        }
         break;
       case Suit.Spades:
         this.fightEnemy(card);
@@ -258,32 +281,34 @@ export default class SocoundrelSolitaire extends Solitaire {
   }
 
   public removeCardFromTableau(card: Card, removeNode: boolean = true): number {
-    const index = this.tableau.findIndex(
-      (c) =>
-        c.cardData.rank === card.cardData.rank &&
-        c.cardData.suit === card.cardData.suit,
-    );
+    const index = this.tableau.findIndex((c) => c.cardData.rank === card.cardData.rank && c.cardData.suit === card.cardData.suit);
     if (index !== -1) {
       this.tableau.splice(index, 1);
       if (removeNode) {
-        card.node.remove();
+        // Remove the wrapper div if card is inside one
+        const wrap = card.node.parentElement;
+        if (wrap && wrap.classList.contains("sol-room-card-wrap")) {
+          wrap.remove();
+        } else {
+          card.node.remove();
+        }
       }
     }
     return index;
   }
 
   public removeCardFromTableauAndDestroy(card: Card) {
-    // remove card from tableau
     this.removeCardFromTableau(card, true);
     card.destroy();
   }
 
   public equipWeapon(card: Card) {
     if (!this.weapon) {
-      this.weapon = new Card(card.cardData, 100, 424, null, null, null);
-      this.appNode.append(this.weapon.node);
+      this.weapon = new Card(card.cardData, 0, 0, null, null, null);
+      this.weapon.setDraggable(false);
+      this.weapon.node.style.position = "relative";
+      this.weaponCardArea.appendChild(this.weapon.node);
     } else {
-      // TODO: Discard Weapon and Enemies stacked on weapon
       this.weapon.updateCardData(card.cardData);
       for (const weaponFoe of this.weaponFoes) {
         weaponFoe.node.remove();
@@ -298,15 +323,12 @@ export default class SocoundrelSolitaire extends Solitaire {
   }
 
   public fightEnemy(card: Card) {
-    // allow choice of fists or weapon
-    // if weapon, check to see if enemy strength is lower than last enemy fought with weapon, if not, must use fists
     let canUseWeapon = false;
     if (this.weapon) {
       if (this.weaponFoes.length === 0) {
         canUseWeapon = true;
       } else {
-        const lastWeaponFoeRank = this.rankToStrength(
-          this.weaponFoes[this.weaponFoes.length - 1].cardData.rank);
+        const lastWeaponFoeRank = this.rankToStrength(this.weaponFoes[this.weaponFoes.length - 1].cardData.rank);
         canUseWeapon = lastWeaponFoeRank > this.rankToStrength(card.cardData.rank);
       }
     }
@@ -319,20 +341,16 @@ export default class SocoundrelSolitaire extends Solitaire {
     this.fightFistsButton!.disabled = true;
     this.fightWeaponButton!.disabled = true;
     const weaponStrength = this.getWeaponStrength();
-    const damage = Math.min(
-      weaponStrength - this.rankToStrength(this.fightingEnemy.cardData.rank),
-      0,
-    );
-    console.log("weapon strength", weaponStrength);
-    console.log("damage to player", damage);
+    const damage = Math.min(weaponStrength - this.rankToStrength(this.fightingEnemy.cardData.rank), 0);
     this.modifyHealth(damage);
     this.weaponFoes.push(this.fightingEnemy);
-    this.positionWeaponFoes();
-    // It does need to be removed from the tableau though and then readded here.
+    // Re-parent card to weapon area
+    this.fightingEnemy.node.style.position = "relative";
+    this.fightingEnemy.setDraggable(false);
+    this.weaponCardArea.appendChild(this.fightingEnemy.node);
     this.removeCardFromTableau(this.fightingEnemy, false);
-    if (this.tableau.length === 1) {
+    if (this.tableau.length === 1)
       this.enterRoom();
-    }
   }
 
   public fightEnemyWithFists() {
@@ -342,43 +360,45 @@ export default class SocoundrelSolitaire extends Solitaire {
     const fistCardData = this.fightingEnemy.cardData;
     this.removeCardFromTableauAndDestroy(this.fightingEnemy);
     this.discardStack.pushCard(fistCardData);
-    if (this.tableau.length === 1) {
+    if (this.tableau.length === 1)
       this.enterRoom();
-    }
-  }
-
-  public positionWeaponFoes() {
-    let i = 0;
-    for (const weaponFoe of this.weaponFoes) {
-      weaponFoe.reposition(i * 30 + 200, 424);
-      weaponFoe.node.style.zIndex = `${i + 1}`; // Ensure stacking order
-      i += 1;
-    }
   }
 
   public modifyHealth(amount: number) {
-    console.log("modify health", amount);
     this.health += amount;
-    if (this.health > 20) {
+    if (this.health > 20)
       this.health = 20;
-    }
     if (this.healthLabel) {
-      this.healthLabel.innerHTML = `Health: ${this.health}`;
+      this.healthLabel.textContent = `♥ ${this.health}`;
+      this.healthLabel.style.color = this.health <= 5 ? "#cc3333" : this.health <= 10 ? "#c9a84c" : "#77bb77";
     }
-    if (this.health <= 0) {
+    if (this.health <= 0)
       this.showGameOver();
-    }
   }
 
   public showGameOver() {
-    const gameOver = document.createElement("div");
-    gameOver.classList.add("game-over");
-    gameOver.style.fontSize = "48px";
-    gameOver.style.color = "red";
-    gameOver.style.position = "absolute";
-    gameOver.style.left = "50%";
-    gameOver.style.top = "50%";
-    gameOver.innerHTML = "Game Over";
-    this.appNode.append(gameOver);
+    const overlay = document.createElement("div");
+    overlay.className = "sol-overlay";
+    const msg = document.createElement("div");
+    msg.className = "sol-overlay-msg sol-game-over";
+    msg.textContent = "Game Over";
+    overlay.appendChild(msg);
+    const btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;gap:12px;margin-top:20px;";
+    const newGameBtn = document.createElement("button");
+    newGameBtn.className = "sol-btn";
+    newGameBtn.textContent = "New Game";
+    newGameBtn.addEventListener("click", () => this.onNewGame());
+    const backBtn = document.createElement("button");
+    backBtn.className = "sol-btn";
+    backBtn.textContent = "Back";
+    backBtn.addEventListener("click", () => this.onBack());
+    btnRow.append(newGameBtn, backBtn);
+    const container = document.createElement("div");
+    container.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+    container.append(msg, btnRow);
+    overlay.innerHTML = "";
+    overlay.appendChild(container);
+    this.appNode.appendChild(overlay);
   }
 }

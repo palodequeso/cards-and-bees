@@ -1,4 +1,5 @@
 import { Draggable } from "./util";
+import { Preferences } from "./preferences";
 
 export enum Suit {
   Clubs = "Clubs",
@@ -75,6 +76,8 @@ export class CardData {
   public suit: Suit;
   public rank: Rank;
   public faceDown: boolean = true;
+  public x: number = 0; // play-area fraction (0-1) for played cards
+  public y: number = 0;
 }
 
 export default class Card extends Draggable {
@@ -82,6 +85,7 @@ export default class Card extends Draggable {
   private cardMovedCallback: (c: Card) => void;
   private cardDroppedCallback: (c: Card) => void;
   private cardSelectedCallback: (c: Card) => void;
+  private boundClickHandler: (() => void) | null = null;
   private data: CardData;
   public x: number = 0;
   public y: number = 0;
@@ -117,11 +121,10 @@ export default class Card extends Draggable {
     const fileName = this.data.faceDown
       ? "back-blue.png"
       : `${this.data.rank.toString().substring(0, 1).toLowerCase()}${this.data.suit.toString().substring(0, 1).toLowerCase()}.png`;
-    this.domNode.style.backgroundImage = `url(./static/poker/8bit/${fileName})`;
+    this.domNode.style.backgroundImage = `url(${Preferences.cardPath}${fileName})`;
     if (this.cardSelectedCallback) {
-      this.domNode.addEventListener("click", () => {
-        this.cardSelectedCallback(this);
-      });
+      this.boundClickHandler = () => this.cardSelectedCallback(this);
+      this.domNode.addEventListener("click", this.boundClickHandler);
     }
   }
 
@@ -145,7 +148,6 @@ export default class Card extends Draggable {
   }
 
   public cardMoved(x: number, y: number) {
-    // Visually already moved by Draggable
     this.x = x;
     this.y = y;
     if (this.cardMovedCallback) {
@@ -154,7 +156,6 @@ export default class Card extends Draggable {
   }
 
   public cardDropped(x: number, y: number) {
-    // Visually already moved by Draggable
     this.x = x;
     this.y = y;
     if (this.cardDroppedCallback) {
@@ -163,10 +164,8 @@ export default class Card extends Draggable {
   }
 
   public destroy() {
-    if (this.cardSelectedCallback) {
-      this.domNode.removeEventListener("click", () => {
-        this.cardSelectedCallback(this);
-      });
+    if (this.boundClickHandler) {
+      this.domNode.removeEventListener("click", this.boundClickHandler);
     }
     super.destroy();
   }
@@ -176,6 +175,6 @@ export default class Card extends Draggable {
     const fileName = this.data.faceDown
       ? "back-blue.png"
       : `${this.data.rank.toString().substring(0, 1).toLowerCase()}${this.data.suit.toString().substring(0, 1).toLowerCase()}.png`;
-    this.domNode.style.backgroundImage = `url(./static/poker/8bit/${fileName})`;
+    this.domNode.style.backgroundImage = `url(${Preferences.cardPath}${fileName})`;
   }
 }

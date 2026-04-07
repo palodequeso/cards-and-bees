@@ -2,15 +2,6 @@ function lerp1(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-function normalizeVector(v: number[]): number[] {
-  const length = Math.sqrt(v[0] * v[0] + v[1] * v[1]);
-  if (length === 0) {
-    return [0, 0];
-  }
-  return [v[0] / length, v[1] / length];
-}
-
-////////// loooooooooooooooollll
 function projectileMotionInterpolation(
   start: { x: number; y: number },
   end: { x: number; y: number },

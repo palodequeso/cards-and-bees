@@ -122,8 +122,7 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
   }
 
   private async _handleMove(client: Client, data: any) {
-    const { username, from, to, card } = data;
-    console.log(username, from, to, card);
+    const { from, to, card } = data;
     if (from === "hand" && to === "table") {
       const player = this._getPlayer(client);
       if (!player) {
@@ -211,15 +210,51 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
 
       const cardToMove = this.state.tableCards.splice(cardIndex, 1)[0];
       player.hand.push(cardToMove);
+    } else if (from === "hand" && to === "played") {
+      const player = this._getPlayer(client);
+      if (!player) return;
+      const cardIndex = player.hand.findIndex(
+        (c) => c.value.get("rank") === card.value.rank && c.value.get("suit") === card.value.suit,
+      );
+      if (cardIndex === -1) return;
+      const cardToMove = player.hand.splice(cardIndex, 1)[0];
+      cardToMove.x = card.x;
+      cardToMove.y = card.y;
+      cardToMove.isFaceDown = card.isFaceDown;
+      player.played.push(cardToMove);
+    } else if (from === "played" && to === "played") {
+      const player = this._getPlayer(client);
+      if (!player) return;
+      const cardIndex = player.played.findIndex(
+        (c) => c.value.get("rank") === card.value.rank && c.value.get("suit") === card.value.suit,
+      );
+      if (cardIndex === -1) return;
+      player.played[cardIndex].x = card.x;
+      player.played[cardIndex].y = card.y;
+    } else if (from === "played" && to === "hand") {
+      const player = this._getPlayer(client);
+      if (!player) return;
+      const cardIndex = player.played.findIndex(
+        (c) => c.value.get("rank") === card.value.rank && c.value.get("suit") === card.value.suit,
+      );
+      if (cardIndex === -1) return;
+      const cardToMove = player.played.splice(cardIndex, 1)[0];
+      player.hand.push(cardToMove);
+    } else if (from === "played" && to === "table") {
+      const player = this._getPlayer(client);
+      if (!player) return;
+      const cardIndex = player.played.findIndex(
+        (c) => c.value.get("rank") === card.value.rank && c.value.get("suit") === card.value.suit,
+      );
+      if (cardIndex === -1) return;
+      const cardToMove = player.played.splice(cardIndex, 1)[0];
+      cardToMove.x = card.x;
+      cardToMove.y = card.y;
+      cardToMove.isFaceDown = card.isFaceDown;
+      this.state.tableCards.push(cardToMove);
     }
   }
 
-  requestJoin(options: any, isNew: boolean) {
-    console.log("request join", options, isNew);
-    return true;
-  }
-
-  // room has been created: bring your own logic
   async onCreate(options: any) {
     const newRoom = new RoomState();
     this.setMetadata(options);
@@ -235,14 +270,6 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
   }
 
   _handleMessage(client: Client, type: string, data: any, extra: any) {
-    console.log(
-      "received message:",
-      client.id,
-      client.sessionId,
-      type,
-      data,
-      extra,
-    );
     if (type === "draw") {
       this._handleDrawCard(client, data);
     } else if (type === "chat") {
@@ -265,7 +292,6 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
 
   // client left: bring your own logic
   async onLeave(client: Client, consented: boolean) {
-    console.log("client left", client.sessionId, consented);
     const playerIndex = this.state.players.findIndex((p) => p.id === client.sessionId);
     if (playerIndex !== -1) {
       this.state.players.splice(playerIndex, 1);
@@ -273,7 +299,5 @@ export default class FreePlayPokerRoom extends Room<RoomState> {
   }
 
   // room has been disposed: bring your own logic
-  async onDispose() {
-    console.log("room disposed");
-  }
+  async onDispose() {}
 }

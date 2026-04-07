@@ -4,7 +4,11 @@ export class Draggable {
   private offsetY = 0;
   private isEnabled = true;
 
-  private static draggingElement: Draggable | null = null; // Track the current dragging element
+  private static draggingElement: Draggable | null = null;
+
+  static get isDragging() {
+    return Draggable.draggingElement !== null;
+  }
 
   constructor(
     protected dragElement: HTMLElement,
@@ -13,7 +17,7 @@ export class Draggable {
   ) {
     this.dragElement.style.position = "absolute";
     this.dragElement.style.cursor = "grab";
-    this.dragElement.draggable = false; // Disable HTML5 native dragging
+    this.dragElement.draggable = false;
     this.dragElement.addEventListener("mousedown", this.onMouseDown);
     this.dragElement.addEventListener("touchstart", this.onTouchStart, {
       passive: false,
@@ -27,23 +31,18 @@ export class Draggable {
   }
 
   private onMouseDown = (event: MouseEvent) => {
-    if (!this.isEnabled) {
-      return;
-    }
+    if (!this.isEnabled) return;
     event.preventDefault();
-    if (Draggable.draggingElement) return; // Prevent starting a drag if another element is already being dragged
-    Draggable.draggingElement = this; // Set the current instance as the dragging element
-    console.log('event', event);
+    if (Draggable.draggingElement) return;
+    Draggable.draggingElement = this;
     this.startDragging(event.clientX, event.clientY);
   };
 
   private onTouchStart = (event: TouchEvent) => {
-    if (!this.isEnabled) {
-      return;
-    }
+    if (!this.isEnabled) return;
     event.preventDefault();
-    if (Draggable.draggingElement) return; // Prevent starting a drag if another element is already being dragged
-    Draggable.draggingElement = this; // Set the current instance as the dragging element
+    if (Draggable.draggingElement) return;
+    Draggable.draggingElement = this;
     const touch = event.touches[0];
     this.startDragging(touch.clientX, touch.clientY);
   };
@@ -80,40 +79,46 @@ export class Draggable {
   };
 
   private onMouseUp = () => {
-    if (!this.isEnabled || Draggable.draggingElement !== this) {
-      return;
-    }
+    if (!this.isEnabled || Draggable.draggingElement !== this) return;
     this.stopDragging();
   };
 
   private onTouchEnd = () => {
-    if (!this.isEnabled || Draggable.draggingElement !== this) {
-      return;
-    }
+    if (!this.isEnabled || Draggable.draggingElement !== this) return;
     this.stopDragging();
   };
 
   private startDragging(clientX: number, clientY: number) {
     this.isDragging = true;
-    this.offsetX = clientX - this.dragElement.offsetLeft;
-    this.offsetY = clientY - this.dragElement.offsetTop;
-    this.dragElement.style.left = clientX - this.offsetX + "px";
-    this.dragElement.style.top = clientY - this.offsetY + "px";
+    const rect = this.dragElement.getBoundingClientRect();
+    // Find the offset parent — this is the containing block for position:absolute
+    const parent = this.dragElement.offsetParent as HTMLElement;
+    const parentRect = parent ? parent.getBoundingClientRect() : { left: 0, top: 0 };
+    // Absolute positioning is relative to the parent's padding edge, so
+    // subtract the parent's border (clientLeft/clientTop) from the offset.
+    const borderLeft = parent ? parent.clientLeft : 0;
+    const borderTop = parent ? parent.clientTop : 0;
+    const left = rect.left - parentRect.left - borderLeft;
+    const top = rect.top - parentRect.top - borderTop;
+    this.offsetX = clientX - left;
+    this.offsetY = clientY - top;
+    this.dragElement.style.position = "absolute";
+    this.dragElement.style.margin = "0";
+    this.dragElement.style.left = left + "px";
+    this.dragElement.style.top = top + "px";
     this.dragElement.style.cursor = "grabbing";
-    this.dragElement.style.zIndex = "1000"; // Ensure the dragged element is on top
+    this.dragElement.style.zIndex = "1000";
   }
 
   private stopDragging() {
     this.isDragging = false;
     this.dragElement.style.cursor = "grab";
-    this.dragElement.style.zIndex = ""; // Reset z-index
+    this.dragElement.style.zIndex = "";
     const { left, top } = this.dragElement.getBoundingClientRect();
     if (this.onDragEnd) {
-      this.onDragEnd(
-        left, top,
-      );
+      this.onDragEnd(left, top);
     }
-    Draggable.draggingElement = null; // Reset the dragging element
+    Draggable.draggingElement = null;
   }
 
   public setEnabled(enabled: boolean) {

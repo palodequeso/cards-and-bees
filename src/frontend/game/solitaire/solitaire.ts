@@ -4,8 +4,11 @@ export default class Solitaire {
   constructor(
     protected appNode: HTMLDivElement,
     protected type: string,
+    protected onBack?: () => void,
+    protected onNewGame?: () => void,
   ) {
-    //
+    this.onBack = onBack || (() => {});
+    this.onNewGame = onNewGame || (() => {});
   }
 
   public get node() {

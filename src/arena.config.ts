@@ -13,15 +13,12 @@ export default Arena({
     },
 
     initializeExpress: (app) => {
+        const express = require('express');
         app.get("/", (req, res) => {
             res.sendFile(path.join(__dirname, '../index.html'));
         });
-        app.get('/dist/frontend/*', (_, res) => {
-            res.sendFile(path.join(__dirname, '../dist/frontend/' + _.params[0]));
-        });
-        app.get('/static/*', (_, res) => {
-            res.sendFile(path.join(__dirname, '../static/' + _.params[0]));
-        });
+        app.use('/dist/frontend', express.static(path.join(__dirname, '../dist/frontend')));
+        app.use('/static', express.static(path.join(__dirname, '../static')));
 
         app.use("/colyseus", monitor());
     },

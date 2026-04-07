@@ -1,206 +1,255 @@
 import Card, { CardData } from "./card";
 
 export default class Player {
-  private domNode: HTMLDivElement | null = null;
-  private isSelf: boolean = false;
-  private player: any = null;
+  private zoneNode: HTMLDivElement;
+  private playAreaNode: HTMLDivElement;
+  private playAreaLabel: HTMLDivElement;
+  private handStripNode: HTMLDivElement | null = null; // self only
+  private isSelf: boolean;
+  private player: any;
   private hand: CardData[] = [];
-  private playerIndex: number = 0;
-  private handSummary: HTMLDivElement | null = null;
+  private played: CardData[] = [];
   private handCards: Card[] = [];
-  private cardMovedToTable: (c: Card) => void;
-  private handCardsReordered: (p: Player, newOrder: CardData[]) => void;
+  private playedCards: Card[] = [];
+  private handSummary: HTMLDivElement | null = null;
+  private onCardDroppedFromHand: (c: Card) => void;
+  private onCardDroppedFromPlayArea: (c: Card) => void;
+  private onPlayAreaCardMoved: (c: Card, xFrac: number, yFrac: number) => void;
+  private onHandReordered: (p: Player, newOrder: CardData[]) => void;
 
   constructor(
     isSelf: boolean,
     player: any,
     hand: CardData[],
+    played: CardData[],
     playerIndex: number,
-    cardMovedToTable: (c: Card) => void,
-    handCardsReordered: (p: Player, newOrder: CardData[]) => void,
+    onCardDroppedFromHand: (c: Card) => void,
+    onCardDroppedFromPlayArea: (c: Card) => void,
+    onPlayAreaCardMoved: (c: Card, xFrac: number, yFrac: number) => void,
+    onHandReordered: (p: Player, newOrder: CardData[]) => void,
   ) {
     this.isSelf = isSelf;
     this.player = player;
-    this.playerIndex = playerIndex;
-    this.cardMovedToTable = cardMovedToTable;
-    this.handCardsReordered = handCardsReordered;
+    this.onCardDroppedFromHand = onCardDroppedFromHand;
+    this.onCardDroppedFromPlayArea = onCardDroppedFromPlayArea;
+    this.onPlayAreaCardMoved = onPlayAreaCardMoved;
+    this.onHandReordered = onHandReordered;
 
-    this.domNode = document.createElement("div");
-    this.domNode.classList.add("player-container");
-    this.domNode.style.position = "fixed";
-    if (this.isSelf) {
-      this.domNode.style.left = "300px";
-      this.domNode.style.bottom = "10px";
-      this.domNode.style.height = "132px";
+    // ── Outer zone wrapper ──────────────────────────────
+    this.zoneNode = document.createElement("div");
+    this.zoneNode.classList.add(isSelf ? "player-self-zone" : "player-opponent-zone");
+
+    // ── Play area ───────────────────────────────────────
+    this.playAreaNode = document.createElement("div");
+    this.playAreaNode.classList.add("player-play-area");
+    this.playAreaNode.classList.add(isSelf ? "self-play-area" : "opponent-play-area");
+
+    this.playAreaLabel = document.createElement("div");
+    this.playAreaLabel.classList.add("play-area-label");
+    this.playAreaLabel.textContent = "play area";
+    this.playAreaNode.appendChild(this.playAreaLabel);
+
+    if (isSelf) {
+      // Self: play area above hand strip (play area closer to center table)
+      this.zoneNode.appendChild(this.playAreaNode);
+
+      this.handStripNode = document.createElement("div");
+      this.handStripNode.classList.add("player-hand-strip");
+      const nameEl = document.createElement("div");
+      nameEl.classList.add("player-name", "is-self");
+      nameEl.textContent = player.name;
+      this.handStripNode.appendChild(nameEl);
+      this.zoneNode.appendChild(this.handStripNode);
     } else {
-      this.domNode.style.left = `${24 + 200 * this.playerIndex}px`;
-      this.domNode.style.top = "32px";
+      // Opponent: name+hand summary at top edge, play area below (closer to center table)
+      const headerRow = document.createElement("div");
+      headerRow.classList.add("opponent-header");
+      const nameEl = document.createElement("div");
+      nameEl.classList.add("player-name");
+      nameEl.textContent = player.name;
+      headerRow.appendChild(nameEl);
+      this.handSummary = document.createElement("div");
+      this.handSummary.classList.add("hand-summary");
+      headerRow.appendChild(this.handSummary);
+      this.zoneNode.appendChild(headerRow);
+      this.zoneNode.appendChild(this.playAreaNode);
     }
 
-    const playerName = document.createElement("div");
-    playerName.classList.add("player-name");
-    playerName.innerHTML = `Name: ${player.name}`;
-    this.domNode.appendChild(playerName);
-
     this.updateHand(hand);
+    this.updatePlayed(played);
   }
 
+  // ── Hand ──────────────────────────────────────────────
   public updateHand(hand: CardData[]) {
     this.hand = hand;
     if (this.isSelf) {
-      this.updateOwnHand();
+      this.syncHandCards();
     } else {
-      if (!this.handSummary) {
-        this.handSummary = document.createElement("div");
-        this.handSummary.classList.add("hand-summary");
-        this.domNode.appendChild(this.handSummary);
-      }
-      this.handSummary.innerHTML = `${hand.length} cards in hand.`;
+      this.handSummary.textContent = `${hand.length} card${hand.length !== 1 ? "s" : ""} in hand`;
     }
   }
 
-  private updateOwnHand() {
-    const indexesToRemove = [];
+  private syncHandCards() {
+    // Remove cards no longer in hand
+    const toRemove = [];
     for (let i = 0; i < this.handCards.length; i++) {
-      const card = this.handCards[i];
-      // remove cards that are no longer in hand
-      const foundInHand = this.hand.find(
-        (c) => c.rank === card.cardData.rank && c.suit === card.cardData.suit,
-      );
-      if (!foundInHand) {
-        card.node.remove();
-        card.destroy();
-        indexesToRemove.push(i);
+      const stillThere = this.hand.find((c) => c.rank === this.handCards[i].cardData.rank && c.suit === this.handCards[i].cardData.suit);
+      if (!stillThere) {
+        this.handCards[i].node.remove();
+        this.handCards[i].destroy();
+        toRemove.push(i);
       }
     }
-    // Remove in reverse order to maintain correct indices
-    for (let i = indexesToRemove.length - 1; i >= 0; i--) {
-      this.handCards.splice(indexesToRemove[i], 1);
-    }
-    for (const cardData of this.hand) {
-      if (
-        this.handCards.findIndex(
-          (c) =>
-            c.cardData.rank === cardData.rank &&
-            c.cardData.suit === cardData.suit,
-        ) !== -1
-      ) {
+    for (let i = toRemove.length - 1; i >= 0; i--)
+      this.handCards.splice(toRemove[i], 1);
+
+    // Add new cards
+    for (const cd of this.hand) {
+      const exists = this.handCards.findIndex((c) => c.cardData.rank === cd.rank && c.cardData.suit === cd.suit) !== -1;
+      if (exists)
         continue;
-      }
-      const card = new Card(
-        cardData,
-        this.handCards.length * 20 + 4,
-        24,
-        this.cardDragged.bind(this),
-        this.cardDropped.bind(this),
-      );
+      const card = new Card(cd, this.handCards.length * 28 + 4, 26, this.handCardDragged.bind(this), this.handCardDropped.bind(this));
       this.handCards.push(card);
-      this.domNode.append(card.node);
+      this.handStripNode.appendChild(card.node);
     }
     this.lineupHandCards();
   }
 
   private lineupHandCards() {
-    for (let i = 0; i < this.hand.length; i += 1) {
-      const handCard = this.handCards.find(
-        (c) =>
-          c.cardData.rank === this.hand[i].rank &&
-          c.cardData.suit === this.hand[i].suit
-      );
-      if (!handCard) {
-        console.error("Card not found in handCards for lineup", this.hand[i]);
+    for (let i = 0; i < this.hand.length; i++) {
+      const card = this.handCards.find((c) => c.cardData.rank === this.hand[i].rank && c.cardData.suit === this.hand[i].suit);
+      if (!card)
         continue;
-      }
-      handCard.node.style.left = `${i * 20 + 4}px`;
-      handCard.node.style.top = "24px";
-      handCard.node.style.zIndex = `${i + 1}`;
+      card.node.style.left = `${i * 28 + 4}px`;
+      card.node.style.top = "30px";
+      card.node.style.zIndex = `${i + 1}`;
+    }
+    const w = Math.max(200, this.hand.length * 28 + 100);
+    this.handStripNode.style.width = `${w}px`;
+  }
+
+  private handCardDragged(c: Card) {
+    const sorted = this.handCards.slice().sort((a, b) => a.node.getBoundingClientRect().left - b.node.getBoundingClientRect().left);
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].cardData.rank === c.cardData.rank && sorted[i].cardData.suit === c.cardData.suit)
+        continue;
+      sorted[i].node.style.left = `${i * 28 + 4}px`;
+      sorted[i].node.style.top = "30px";
     }
   }
 
-  public cardDragged(c: Card) {
-    // TODO: Allow reordering cards in hand here
-    const cardsOrderedByXPosition = this.handCards
-      .slice() // create a copy to sort
-      .sort((a, b) => {
-        // Sort by x position
-        const aRect = a.node.getBoundingClientRect();
-        const bRect = b.node.getBoundingClientRect();
-        const aX = aRect.left + aRect.width / 2; // center of the card
-        const bX = bRect.left + bRect.width / 2; // center of the card
-        if (aX < bX) {
-          return -1; // a comes before b
-        } else if (aX > bX) {
-          return 1; // a comes after b
-        } else {
-          return 0; // a and b are equal
-        }
-      });
-    // This is where you can implement logic to reorder the cards in the hand
-    // but just leave a space for where the card is being dragged is supposed to be in the computed ordering
-    for (let i = 0; i < cardsOrderedByXPosition.length; i++) {
-      // skip the card that is being dragged
-      if (
-        cardsOrderedByXPosition[i].cardData.rank === c.cardData.rank &&
-        cardsOrderedByXPosition[i].cardData.suit === c.cardData.suit
-      ) {
-        continue;
-      }
-      cardsOrderedByXPosition[i].node.style.left = `${i * 20 + 4}px`;
-      cardsOrderedByXPosition[i].node.style.top = "24px";
-    }
-  }
-
-  public cardDropped(c: Card) {
-    const cardRect = c.node.getBoundingClientRect();
-    const playerRect = this.domNode.getBoundingClientRect();
-    // if card is mostly inside, then move to hand
-    // else move to table
+  private handCardDropped(c: Card) {
+    const cr = c.node.getBoundingClientRect();
+    const hr = this.handStripNode.getBoundingClientRect();
     const margin = 20;
-    if (
-      cardRect.left > playerRect.left - margin &&
-      cardRect.right < playerRect.right + margin &&
-      cardRect.top > playerRect.top - margin &&
-      cardRect.bottom < playerRect.bottom + margin
-    ) {
-      console.log("Card Dropped in hand", c);
-      // TODO: Reorder cards based on drop spot
-      this.handCardsReordered(this, this.handCards
-        .slice() // create a copy to sort
-        .sort((a, b) => {
-          // Sort by x position
-          const aRect = a.node.getBoundingClientRect();
-          const bRect = b.node.getBoundingClientRect();
-          const aX = aRect.left + aRect.width / 2; // center of the card
-          const bX = bRect.left + bRect.width / 2; // center of the card
-          if (aX < bX) {
-            return -1; // a comes before b
-          } else if (aX > bX) {
-            return 1; // a comes after b
-          } else {
-            return 0; // a and b are equal
-          }
-        }).map((c) => c.cardData)); // return the new order of cards in the hand
+    const inHand = cr.left > hr.left - margin &&
+      cr.right < hr.right + margin &&
+      cr.top > hr.top - margin &&
+      cr.bottom < hr.bottom + margin;
+
+    if (inHand) {
+      const newOrder = this.handCards
+        .slice()
+        .sort((a, b) => a.node.getBoundingClientRect().left - b.node.getBoundingClientRect().left)
+        .map((c) => c.cardData);
+      this.onHandReordered(this, newOrder);
     } else {
-      console.log("Card Dropped on table", c);
-      this.cardMovedToTable(c);
-      // TODO: Remove card from hand
-      const cardIndex = this.hand.findIndex(
-        (cardData) => cardData.rank === c.cardData.rank && cardData.suit === c.cardData.suit,
-      );
-      if (cardIndex === -1) {
-        console.error("Oops! Card not found in hand:", c.cardData);
-        return;
-      }
-      this.hand.splice(cardIndex, 1);
+      // Let game.ts decide: play area? stacks? center?
+      const idx = this.hand.findIndex((cd) => cd.rank === c.cardData.rank && cd.suit === c.cardData.suit);
+      if (idx !== -1)
+        this.hand.splice(idx, 1);
+      this.onCardDroppedFromHand(c);
     }
     this.lineupHandCards();
   }
 
-  public get node() {
-    return this.domNode;
+  // ── Play area (freeform) ───────────────────────────────
+  public updatePlayed(played: CardData[]) {
+    this.played = played;
+    // Remove cards no longer in played
+    const toRemove = [];
+    for (let i = 0; i < this.playedCards.length; i++) {
+      const stillThere = this.played.find((c) => c.rank === this.playedCards[i].cardData.rank && c.suit === this.playedCards[i].cardData.suit);
+      if (!stillThere) {
+        this.playedCards[i].node.remove();
+        this.playedCards[i].destroy();
+        toRemove.push(i);
+      }
+    }
+    for (let i = toRemove.length - 1; i >= 0; i--)
+      this.playedCards.splice(toRemove[i], 1);
+
+    // Add new cards or reposition existing ones
+    for (const cd of this.played) {
+      const existing = this.playedCards.find((c) => c.cardData.rank === cd.rank && c.cardData.suit === cd.suit);
+      if (existing) {
+        // Update position from server state
+        this.positionPlayedCard(existing, cd);
+        continue;
+      }
+      const card = this.isSelf
+        ? new Card(cd, 0, 0, undefined, this.playAreaCardDropped.bind(this))
+        : new Card(cd, 0, 0);
+      if (!this.isSelf)
+        card.setDraggable(false);
+      this.playedCards.push(card);
+      this.playAreaNode.appendChild(card.node);
+      this.positionPlayedCard(card, cd);
+    }
+    this.playAreaLabel.style.display = this.played.length > 0 ? "none" : "";
+    this.playAreaNode.classList.toggle("has-cards", this.played.length > 0);
   }
 
-  public get playerId() {
-    return this.player.id; // Return the player ID for reference
+  private positionPlayedCard(card: Card, cd: CardData) {
+    const cw = this.playAreaNode.clientWidth;
+    const ch = this.playAreaNode.clientHeight;
+    // If play area not yet in DOM or fractions are 0, use a staggered default
+    if (cw === 0 || ch === 0) {
+      const idx = this.playedCards.indexOf(card);
+      card.reposition(idx * 28 + 8, 8);
+      return;
+    }
+    card.node.style.left = `${cd.x * cw}px`;
+    card.node.style.top = `${cd.y * ch}px`;
   }
+
+  private playAreaCardDropped(c: Card) {
+    const cr = c.node.getBoundingClientRect();
+    const pr = this.playAreaNode.getBoundingClientRect();
+    // Check if card center is far enough from play area to count as ejected
+    const centerX = (cr.left + cr.right) / 2;
+    const centerY = (cr.top + cr.bottom) / 2;
+    const ejectMargin = 80;
+    const ejected = centerX < pr.left - ejectMargin ||
+      centerX > pr.right + ejectMargin ||
+      centerY < pr.top - ejectMargin ||
+      centerY > pr.bottom + ejectMargin;
+
+    if (ejected) {
+      // Truly ejected — game.ts decides where it lands
+      const idx = this.played.findIndex((cd) => cd.rank === c.cardData.rank && cd.suit === c.cardData.suit);
+      if (idx !== -1)
+        this.played.splice(idx, 1);
+      this.onCardDroppedFromPlayArea(c);
+      return;
+    }
+
+    // Snap back into play area bounds and update position using content dimensions
+    const contentLeft = pr.left + this.playAreaNode.clientLeft;
+    const contentTop = pr.top + this.playAreaNode.clientTop;
+    const cw = this.playAreaNode.clientWidth;
+    const ch = this.playAreaNode.clientHeight;
+    const xFrac = Math.max(0, Math.min(0.95, (cr.left - contentLeft) / cw));
+    const yFrac = Math.max(0, Math.min(0.95, (cr.top - contentTop) / ch));
+    c.node.style.left = `${xFrac * cw}px`;
+    c.node.style.top = `${yFrac * ch}px`;
+    this.onPlayAreaCardMoved(c, xFrac, yFrac);
+  }
+
+  // ── Public interface ──────────────────────────────────
+  get node() { return this.zoneNode; }
+  get playAreaEl() { return this.playAreaNode; }
+  get handEl() { return this.handStripNode; }
+  get isPlayerSelf() { return this.isSelf; }
+  get playerId() { return this.player.id; }
 }

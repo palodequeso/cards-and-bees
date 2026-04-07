@@ -1,163 +1,132 @@
 import Bee from "./bee";
+import SettingsPanel from "./settings";
 import { Client } from "colyseus.js";
 import Game from "../game/game";
-import SocoundrelSolitaire from "../game/solitaire/scoundrel";
+import ScoundrelSolitaire from "../game/solitaire/scoundrel";
 import KlondikeSolitaire from "../game/solitaire/klondike";
+import { Preferences } from "../game/preferences";
 
-function buildWSUrl(portOverride: number | null = null) {
+function buildWSUrl() {
   const host = window.document.location.host.replace(/:.*/, "");
-  const url =
-    location.protocol.replace("http", "ws") +
-    "//" +
-    host +
-    (location.port ? ":" + location.port : "");
-  console.log("buildWSUrl", url);
-  return url;
+  return location.protocol.replace("http", "ws") + "//" + host + (location.port ? ":" + location.port : "");
 }
 
 const gameStateRoomName = "game_room";
 
 export default class App {
-  private appNode: HTMLDivElement | null = null;
+  private appNode: HTMLDivElement;
   private sections: { [key: string]: HTMLDivElement } = {};
   private client: Client | null = null;
   private username: string | null = null;
   private rooms: any[] = [];
   private room: any = null;
-  private roomName: string | null = null;
   private game: Game;
+  private settings: SettingsPanel;
 
   constructor(appNode: HTMLDivElement) {
     this.appNode = appNode;
-    console.log("app node construct", appNode);
+    this.settings = new SettingsPanel();
     this.createBees();
     this.setupSections();
     this.bindButtons();
     this.connectToServer();
+    this.applyTableBackground();
+    Preferences.onChange(() => this.applyTableBackground());
   }
 
   setupSections() {
-    this.sections["main-menu"] = this.appNode.querySelector(
-      "#main-menu",
-    ) as HTMLDivElement;
-    this.sections["solitaire-menu"] = this.appNode.querySelector(
-      "#solitaire-menu",
-    ) as HTMLDivElement;
-    this.sections["game"] = this.appNode.querySelector(
-      "#game",
-    ) as HTMLDivElement;
-    this.sections["rooms"] = this.appNode.querySelector(
-      "#rooms",
-    ) as HTMLDivElement;
+    this.sections["main-menu"] = this.appNode.querySelector("#main-menu") as HTMLDivElement;
+    this.sections["solitaire-menu"] = this.appNode.querySelector("#solitaire-menu") as HTMLDivElement;
+    this.sections["game"] = this.appNode.querySelector("#game") as HTMLDivElement;
+    this.sections["rooms"] = this.appNode.querySelector("#rooms") as HTMLDivElement;
   }
 
   showSection(sectionName: string) {
     for (const section in this.sections) {
-      if (section === sectionName) {
-        this.sections[section].style.display = "block";
-      } else {
+      if (section !== sectionName) {
         this.sections[section].style.display = "none";
+      } else {
+        this.sections[section].style.display = section === "game" ? "flex" : "block";
       }
     }
   }
 
   bindButtons() {
-    (
-      this.appNode.querySelector("#main-menu-solitaire") as HTMLButtonElement
-    ).onclick = this.playSolitaire.bind(this);
-    (
-      this.appNode.querySelector(
-        "#main-menu-play-together",
-      ) as HTMLButtonElement
-    ).onclick = this.playTogether.bind(this);
-    (this.appNode.querySelector("#create-room") as HTMLButtonElement).onclick =
-      this.createRoom.bind(this);
+    (this.appNode.querySelector("#main-menu-solitaire") as HTMLButtonElement).onclick = () => this.showSection("solitaire-menu");
+    (this.appNode.querySelector("#main-menu-play-together") as HTMLButtonElement).onclick = this.playTogether.bind(this);
+    (this.appNode.querySelector("#create-room") as HTMLButtonElement).onclick = this.createRoom.bind(this);
+    (this.appNode.querySelector("#back-from-rooms") as HTMLButtonElement).onclick = () => this.showSection("main-menu");
+    (this.appNode.querySelector("#back-from-solitaire") as HTMLButtonElement).onclick = () => this.showSection("main-menu");
+    (this.appNode.querySelector("#refresh-rooms") as HTMLButtonElement).onclick = () => this.getAvailableRooms();
+    (this.appNode.querySelector("#open-settings") as HTMLButtonElement).onclick = () => this.settings.open();
+    this.appNode.querySelectorAll(".solitaire-game").forEach((button) => {
+      (button as HTMLButtonElement).onclick = (e) => {
+        const gameType = (e.target as HTMLButtonElement).dataset.gamename;
+        this.startSolitaireGame(gameType);
+      };
+    });
+  }
+
+  applyTableBackground() {
+    const gameDiv = this.appNode.querySelector("#game") as HTMLDivElement;
+    const bgValue = Preferences.tableBackgroundValue;
+    gameDiv.style.background = bgValue;
+    // Also update pixelated rendering preference
+    const style = Preferences.isPixelated ? "pixelated" : "auto";
+    document.documentElement.style.setProperty("--card-rendering", style);
   }
 
   playTogether() {
-    const username = (
-      this.appNode.querySelector(
-        "#main-menu-username-input",
-      ) as HTMLInputElement
-    ).value;
+    const username = (this.appNode.querySelector("#main-menu-username-input") as HTMLInputElement).value.trim();
+    if (!username) return;
     this.username = username;
-    console.log("play together", username);
     this.showSection("rooms");
     this.getAvailableRooms();
   }
 
-  playSolitaire() {
-    console.log("play solitaire");
-    this.showSection("solitaire-menu");
-    // bind solitaire buttons
-    this.appNode.querySelectorAll(".solitaire-game").forEach((button) => {
-      button.addEventListener("click", (e) => {
-        const gameType = (e.target as HTMLButtonElement).dataset.gamename;
-        console.log("game type", gameType);
-        this.startSolitaireGame(gameType);
-      });
-    });
-  }
-
   startSolitaireGame(gameType: string) {
-    console.log("start solitaire game", gameType);
     this.showSection("game");
-    let game;
+    const gameDiv = this.appNode.querySelector("#game") as HTMLDivElement;
+    gameDiv.innerHTML = "";
+    const goBack = () => {
+      gameDiv.innerHTML = "";
+      this.showSection("solitaire-menu");
+    };
+    const restart = () => this.startSolitaireGame(gameType);
+
     switch (gameType) {
       case "scoundrel":
-        game = new SocoundrelSolitaire(
-          this.appNode.querySelector("#game") as HTMLDivElement,
-        );
+        new ScoundrelSolitaire(gameDiv, goBack, restart);
         break;
       case "klondike":
-        game = new KlondikeSolitaire(
-          this.appNode.querySelector("#game") as HTMLDivElement,
-          1
-        );
+        new KlondikeSolitaire(gameDiv, 1, goBack, restart);
         break;
       case "klondike-draw-3":
-        game = new KlondikeSolitaire(
-          this.appNode.querySelector("#game") as HTMLDivElement,
-          3
-        );
+        new KlondikeSolitaire(gameDiv, 3, goBack, restart);
         break;
     }
   }
 
   createBees() {
-    var beesContainer = this.appNode.querySelector("#bees");
-    for (var i = 0; i < 4; i++) {
-      var bee = new Bee();
-      beesContainer.appendChild(bee.node);
+    const beesContainer = this.appNode.querySelector("#bees");
+    for (let i = 0; i < 4; i++) {
+      beesContainer.appendChild(new Bee().node);
     }
   }
 
   connectToServer() {
-    const wsUrl = buildWSUrl();
-    this.client = new Client(wsUrl);
+    this.client = new Client(buildWSUrl());
   }
 
   async createRoom() {
     try {
-      // TODO: fix this
-      const roomName = (
-        this.appNode.querySelector("#room-name-input") as HTMLInputElement
-      ).value;
-      // const privateRoom = (
-      //   document.getElementById("new-room-private") as HTMLInputElement
-      // ).checked;
-
-      const options = {
+      const roomName = (this.appNode.querySelector("#room-name-input") as HTMLInputElement).value.trim();
+      this.room = await this.client.joinOrCreate(gameStateRoomName, {
         username: this.username,
-        name: roomName,
-        private: false, //privateRoom,
-        game: "freePlayPoker", // NOTE: Matches backend
-      };
-
-      console.log("create room before", roomName, options);
-      this.room = await this.client.joinOrCreate(gameStateRoomName, options);
-      console.log("create room after", this.room);
-      // setCreateRoomOpen(false);
+        name: roomName || "Room",
+        private: false,
+        game: "freePlayPoker",
+      });
       this.enterGame();
     } catch (e) {
       console.error(e);
@@ -166,20 +135,12 @@ export default class App {
 
   enterGame() {
     this.showSection("game");
-    this.game = new Game(
-      this.appNode.querySelector("#game") as HTMLDivElement,
-      this.room,
-      this.client as any, // WHY?!?
-      this.username,
-    );
+    this.game = new Game(this.appNode.querySelector("#game") as HTMLDivElement, this.room, this.client as any, this.username);
   }
 
   async joinRoom(room) {
     try {
-      const roomJoinResult = await this.client.join(room.name, {
-        username: this.username,
-      });
-      this.room = roomJoinResult;
+      this.room = await this.client.join(room.name, { username: this.username });
       this.enterGame();
     } catch (e) {
       console.error(e);
@@ -187,36 +148,30 @@ export default class App {
   }
 
   async getAvailableRooms() {
+    const grid = this.appNode.querySelector("#rooms-grid") as HTMLDivElement;
+    grid.innerHTML = '<div class="room-card-empty">Loading…</div>';
+
     this.rooms = await this.client.getAvailableRooms(gameStateRoomName);
-    console.log("rooms", this.rooms);
-    const tbody = this.appNode.querySelector(
-      "#rooms-table",
-    ) as HTMLTableSectionElement;
-    tbody.innerHTML = "";
+    grid.innerHTML = "";
+    if (this.rooms.length === 0) {
+      grid.innerHTML = '<div class="room-card-empty">No rooms yet — create one!</div>';
+      return;
+    }
 
     for (const room of this.rooms) {
-      const tr = document.createElement("tr");
-
-      const id = document.createElement("td");
-      id.innerText = room.roomId;
-      tr.appendChild(id);
-
-      const name = document.createElement("td");
-      name.innerText = room.metadata.name;
-      tr.appendChild(name);
-
-      const people = document.createElement("td");
-      people.innerText = `${room.clients.toString()}/${room.maxClients.toString()}`;
-      tr.appendChild(people);
-
-      const buttons = document.createElement("td");
-      const joinButton = document.createElement("button");
-      joinButton.innerText = "Join";
-      joinButton.onclick = () => this.joinRoom(room);
-      buttons.appendChild(joinButton);
-      tr.appendChild(buttons);
-
-      tbody.appendChild(tr);
+      const card = document.createElement("div");
+      card.className = "room-card";
+      const nameDiv = document.createElement("div");
+      nameDiv.className = "room-card-name";
+      nameDiv.textContent = room.metadata?.name || "Unnamed Room";
+      const playersDiv = document.createElement("div");
+      playersDiv.className = "room-card-players";
+      playersDiv.textContent = `${room.clients} / ${room.maxClients} players`;
+      const joinBtn = document.createElement("button");
+      joinBtn.textContent = "Join";
+      joinBtn.onclick = () => this.joinRoom(room);
+      card.append(nameDiv, playersDiv, joinBtn);
+      grid.appendChild(card);
     }
   }
 }

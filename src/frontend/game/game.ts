@@ -3,18 +3,22 @@ import Card, { Suit, Rank, CardData, stringToRank, stringToSuit } from "./card";
 import Chat from "./chat";
 import Player from "./player";
 import Stack from "./stack";
+import { Draggable } from "./util";
 
 export default class Game {
   private domNode: HTMLDivElement;
   private room: Room;
   private client: Client;
-  private state: any = null; // raw state for ref?, Maybe remove
+  private state: any = null;
   private isSetup: boolean = false;
   private stacks: { [key: string]: Stack } = {};
   private players: { [key: string]: Player } = {};
   private cards: Card[] = [];
   private chat: Chat | null = null;
   private username: string;
+  private opponentsStrip: HTMLDivElement | null = null;
+  private stacksZone: HTMLDivElement | null = null;
+  private opponentCount = 0;
 
   constructor(
     domNode: HTMLDivElement,
@@ -31,28 +35,53 @@ export default class Game {
   }
 
   setup() {
-    if (this.isSetup) {
+    if (this.isSetup)
       return;
-    }
 
-    // card stacks
+    this.opponentsStrip = document.createElement("div");
+    this.opponentsStrip.id = "opponents-strip";
+    this.domNode.appendChild(this.opponentsStrip);
+
+    this.stacksZone = document.createElement("div");
+    this.stacksZone.id = "stacks-zone";
+    this.domNode.appendChild(this.stacksZone);
+
     this.updateStacks();
-
-    // table cards
     this.updateCards();
-
-    // player hands
     this.updatePlayers();
 
-    // chat
     this.chat = new Chat(this.room, this.sendMessage.bind(this));
-    this.domNode.append(this.chat.node);
+    this.domNode.appendChild(this.chat.toggleEl);
+    this.domNode.appendChild(this.chat.panelEl);
+
+    // Highlight self play area while dragging a card
+    document.addEventListener("mousemove", (e) => {
+      const selfPlayer = this.getSelfPlayer();
+      if (!selfPlayer) return;
+      const playArea = selfPlayer.playAreaEl;
+      if (Draggable.isDragging) {
+        const r = playArea.getBoundingClientRect();
+        const over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+        playArea.classList.toggle("drag-over", over);
+      } else {
+        playArea.classList.remove("drag-over");
+      }
+    });
 
     this.isSetup = true;
   }
 
+  // Normalize viewport pixel coords → 0-1 fractions for the server so all
+  // players see shared cards at the same relative position.
+  toNorm(x: number, y: number) {
+    return { x: x / window.innerWidth, y: y / window.innerHeight };
+  }
+  fromNorm(x: number, y: number) {
+    return { x: x * window.innerWidth, y: y * window.innerHeight };
+  }
+
+  // ── Players ───────────────────────────────────────────
   updatePlayers() {
-    // Remove players that are no longer in the state
     for (const playerId in this.players) {
       const found = this.state.players.find((p) => p.id === playerId);
       if (!found) {
@@ -60,185 +89,193 @@ export default class Game {
         delete this.players[playerId];
       }
     }
-    
+
     for (const player of this.state.players) {
-      const handCards: CardData[] = [];
-      for (const handCard of player.hand) {
-        const cardData = new CardData();
-        cardData.rank = stringToRank(handCard.value.rank);
-        cardData.suit = stringToSuit(handCard.value.suit);
-        cardData.faceDown = handCard.isFaceDown;
-        handCards.push(cardData);
-      }
+      const hand = player.hand.map((c) => {
+        const cd = new CardData();
+        cd.rank = stringToRank(c.value.rank);
+        cd.suit = stringToSuit(c.value.suit);
+        cd.faceDown = c.isFaceDown;
+        return cd;
+      });
+      const played = player.played.map((c) => {
+        const cd = new CardData();
+        cd.rank = stringToRank(c.value.rank);
+        cd.suit = stringToSuit(c.value.suit);
+        cd.faceDown = c.isFaceDown;
+        cd.x = c.x;
+        cd.y = c.y;
+        return cd;
+      });
       if (!this.players[player.id]) {
-        const p = new Player(
-          player.name === this.username,
-          player,
-          handCards,
-          Object.keys(this.players).length, // player index for positioning
-          this.cardMovedToTable.bind(this),
-          this.handCardsReordered.bind(this) // callback for when the hand cards are reordered
-        );
+        const isSelf = player.name === this.username;
+        const p = new Player(isSelf, player, hand, played, isSelf ? 0 : this.opponentCount, this.cardDroppedFromHand.bind(this), this.cardDroppedFromPlayArea.bind(this), this.playAreaCardMoved.bind(this), this.handCardsReordered.bind(this));
         this.players[player.id] = p;
-        this.domNode.append(p.node);
+        if (isSelf) {
+          this.domNode.appendChild(p.node);
+        } else {
+          this.opponentsStrip.appendChild(p.node);
+          this.opponentCount++;
+        }
+      } else {
+        this.players[player.id].updateHand(hand);
+        this.players[player.id].updatePlayed(played);
       }
-      const p = this.players[player.id];
-      p.updateHand(handCards);
     }
   }
 
+  // ── Center table cards ────────────────────────────────
   updateCards() {
     const tableCards = this.state.tableCards;
-    const indexesToRemove = [];
+    const toRemove = [];
     for (let i = 0; i < this.cards.length; i++) {
-      const existingCard = this.cards[i];
-      const found = tableCards.find(
-        (c) =>
-          c.value.rank === existingCard.cardData.rank &&
-          c.value.suit === existingCard.cardData.suit,
-      );
+      const found = tableCards.find((c) => c.value.rank === this.cards[i].cardData.rank && c.value.suit === this.cards[i].cardData.suit);
       if (!found) {
-        existingCard.node.remove();
-        existingCard.destroy();
-        indexesToRemove.push(i);
+        this.cards[i].node.remove();
+        this.cards[i].destroy();
+        toRemove.push(i);
       }
     }
-    // Remove in reverse order to maintain correct indices
-    for (let i = indexesToRemove.length - 1; i >= 0; i--) {
-      this.cards.splice(indexesToRemove[i], 1);
-    }
+    for (let i = toRemove.length - 1; i >= 0; i--)
+      this.cards.splice(toRemove[i], 1);
+
     for (const cardItem of tableCards) {
-      const existingCard = this.cards.find(
-        (c) =>
-          c.cardData.rank === cardItem.value.rank &&
-          c.cardData.suit === cardItem.value.suit,
-      );
-      if (existingCard) {
-        // already exists, reposition
-        existingCard.reposition(cardItem.x, cardItem.y);
+      const existing = this.cards.find((c) => c.cardData.rank === cardItem.value.rank && c.cardData.suit === cardItem.value.suit);
+      const { x, y } = this.fromNorm(cardItem.x, cardItem.y);
+      if (existing) {
+        existing.reposition(x, y);
         continue;
       }
-      const cardData = new CardData();
-      cardData.rank = stringToRank(cardItem.value.rank);
-      cardData.suit = stringToSuit(cardItem.value.suit);
-      cardData.faceDown = cardItem.isFaceDown;
-      const card = new Card(
-        cardData,
-        cardItem.x,
-        cardItem.y,
-        this.cardMovedCallback.bind(this),
-        this.cardDroppedCallback.bind(this),
-        this.cardSelectedCallback.bind(this)
-      );
+      const cd = new CardData();
+      cd.rank = stringToRank(cardItem.value.rank);
+      cd.suit = stringToSuit(cardItem.value.suit);
+      cd.faceDown = cardItem.isFaceDown;
+      const card = new Card(cd, x, y, this.tableCardMoved.bind(this), this.tableCardDropped.bind(this), this.tableCardSelected.bind(this));
       this.cards.push(card);
-      this.domNode.append(card.node);
+      this.domNode.appendChild(card.node);
     }
   }
 
-  cardMovedCallback(card: Card) {
+  // Card being actively dragged on the center table — send live position
+  tableCardMoved(card: Card) {
+    const { x, y } = this.toNorm(card.x, card.y);
     this.sendToServer("move", {
-      type: "move",
-      username: this.username,
-      from: "table",
-      to: "table",
-      card: {
-        value: {
-          rank: card.cardData.rank,
-          suit: card.cardData.suit,
-        },
-        x: card.x,
-        y: card.y,
-        isFaceDown: card.cardData.faceDown,
-      },
+      type: "move", username: this.username,
+      from: "table", to: "table",
+      card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x, y, isFaceDown: card.cardData.faceDown },
       stack: null,
     });
   }
 
-  cardDroppedCallback(card: Card) {
-    // check if inside bounds of any stack
-    for (const stackName in this.stacks) {
-      const stack = this.stacks[stackName];
-      const stackRect = stack.node.getBoundingClientRect();
-      if (card.x >= stackRect.left && card.x <= stackRect.right && card.y >= stackRect.top && card.y <= stackRect.bottom) {
-        this.sendToServer("move", {
-          type: "move",
-          username: this.username,
-          from: "table",
-          to: "stack",
-          card: {
-            value: {
-              rank: card.cardData.rank,
-              suit: card.cardData.suit,
-            },
-            x: card.x,
-            y: card.y,
-            isFaceDown: card.cardData.faceDown,
-          },
-          stack: stack.stackId,
-        });
-        return;
-      }
-    }
-
-    // check if inside bounds of player hand
+  // Center table card dropped — route to stack, hand, or stays on table
+  tableCardDropped(card: Card) {
+    if (this.tryDropOnStack(card, "table"))
+      return;
     for (const playerId in this.players) {
       const player = this.players[playerId];
-      const playerRect = player.node.getBoundingClientRect();
-      if (card.x >= playerRect.left && card.x <= playerRect.right && card.y >= playerRect.top && card.y <= playerRect.bottom) {
+      const r = player.node.getBoundingClientRect();
+      if (card.x >= r.left && card.x <= r.right && card.y >= r.top && card.y <= r.bottom) {
+        const { x, y } = this.toNorm(card.x, card.y);
         this.sendToServer("move", {
-          type: "move",
-          username: this.username,
-          playerId: playerId,
-          from: "table",
-          to: "hand",
-          card: {
-            value: {
-              rank: card.cardData.rank,
-              suit: card.cardData.suit,
-            },
-            x: card.x,
-            y: card.y,
-            isFaceDown: card.cardData.faceDown,
-          },
+          type: "move", username: this.username, playerId,
+          from: "table", to: "hand",
+          card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x, y, isFaceDown: card.cardData.faceDown },
           stack: null,
         });
         return;
       }
     }
-
-    console.log('card dropped', card);
+    const { x, y } = this.toNorm(card.x, card.y);
     this.sendToServer("move", {
-      type: "move",
-      username: this.username,
-      from: "table",
-      to: "table",
-      card: {
-        value: {
-          rank: card.cardData.rank,
-          suit: card.cardData.suit,
-        },
-        x: card.x,
-        y: card.y,
-        isFaceDown: card.cardData.faceDown,
-      },
+      type: "move", username: this.username,
+      from: "table", to: "table",
+      card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x, y, isFaceDown: card.cardData.faceDown },
       stack: null,
     });
   }
 
-  cardSelectedCallback(card: Card) {
-    console.log('card selected', card);
+  tableCardSelected(card: Card) {
+    // reserved
   }
 
+  // ── Drop routing from player zones ───────────────────
+  // Card dropped out of your hand — check stacks → your play area → center table
+  cardDroppedFromHand(card: Card) {
+    if (this.tryDropOnStack(card, "hand"))
+      return;
+    const selfPlayer = this.getSelfPlayer();
+    if (selfPlayer) {
+      const r = selfPlayer.playAreaEl.getBoundingClientRect();
+      if (card.x >= r.left && card.x <= r.right && card.y >= r.top && card.y <= r.bottom) {
+        const el = selfPlayer.playAreaEl;
+        const contentLeft = r.left + el.clientLeft;
+        const contentTop = r.top + el.clientTop;
+        const xFrac = Math.max(0, Math.min(0.95, (card.x - contentLeft) / el.clientWidth));
+        const yFrac = Math.max(0, Math.min(0.95, (card.y - contentTop) / el.clientHeight));
+        this.sendToServer("move", {
+          type: "move", username: this.username,
+          from: "hand", to: "played",
+          card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x: xFrac, y: yFrac, isFaceDown: false },
+          stack: null,
+        });
+        return;
+      }
+    }
+    // Lands on center table
+    const { x, y } = this.toNorm(card.x, card.y);
+    this.sendToServer("move", {
+      type: "move", username: this.username,
+      from: "hand", to: "table",
+      card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x, y, isFaceDown: false },
+      stack: null,
+    });
+  }
+
+  // Card dropped out of your play area — check hand → center table
+  cardDroppedFromPlayArea(card: Card) {
+    const selfPlayer = this.getSelfPlayer();
+    if (selfPlayer && selfPlayer.handEl) {
+      const r = selfPlayer.handEl.getBoundingClientRect();
+      if (card.x >= r.left && card.x <= r.right && card.y >= r.top && card.y <= r.bottom) {
+        this.sendToServer("move", {
+          type: "move", username: this.username,
+          from: "played", to: "hand",
+          card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x: 0, y: 0, isFaceDown: false },
+          stack: null,
+        });
+        return;
+      }
+    }
+    // Goes to center table at the drop position
+    const { x, y } = this.toNorm(card.x, card.y);
+    this.sendToServer("move", {
+      type: "move", username: this.username,
+      from: "played", to: "table",
+      card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x, y, isFaceDown: false },
+      stack: null,
+    });
+  }
+
+  // Card repositioned within your play area
+  playAreaCardMoved(card: Card, xFrac: number, yFrac: number) {
+    this.sendToServer("move", {
+      type: "move", username: this.username,
+      from: "played", to: "played",
+      card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x: xFrac, y: yFrac, isFaceDown: false },
+      stack: null,
+    });
+  }
+
+  // ── Stacks ────────────────────────────────────────────
   updateStacks() {
     for (const stack of this.state.cardStacks) {
-      const cardData: CardData[] = [];
-      for (const cardItem of stack.stack) {
-        const cardDataItem = new CardData();
-        cardDataItem.rank = stringToRank(cardItem.value.rank);
-        cardDataItem.suit = stringToSuit(cardItem.value.suit);
-        cardDataItem.faceDown = cardItem.isFaceDown;
-        cardData.push(cardDataItem);
-      }
+      const cardData = stack.stack.map((cardItem) => {
+        const cd = new CardData();
+        cd.rank = stringToRank(cardItem.value.rank);
+        cd.suit = stringToSuit(cardItem.value.suit);
+        cd.faceDown = cardItem.isFaceDown;
+        return cd;
+      });
       if (!this.stacks[stack.id]) {
         const s = new Stack(
           stack.id,
@@ -249,93 +286,47 @@ export default class Game {
           this.stackClick.bind(this),
         );
         this.stacks[stack.id] = s;
-        this.domNode.append(s.node);
+        this.stacksZone.appendChild(s.node);
       }
-      const s = this.stacks[stack.id];
-      s.updateCards(cardData);
-      s.setFaceDown(stack.isFaceDown);
+      this.stacks[stack.id].updateCards(cardData);
+      this.stacks[stack.id].setFaceDown(stack.isFaceDown);
     }
   }
 
   stackClick(stack: Stack) {
-    console.log("stack clicked", stack);
-    this.sendToServer("draw", {
-      type: "draw",
-      username: this.username,
-      value: stack.stackId,
-    });
+    this.sendToServer("draw", { type: "draw", username: this.username, value: stack.stackId });
   }
 
-  handCardsReordered(player: Player, newOrder: CardData[]) {
-    this.sendToServer("reorder-hand", {
-      playerId: player.playerId,
-      order: newOrder,
-    });
-  }
-
-  cardMovedToTable(card: Card) {
-    console.log("card moved to table", card);
-    // const dx = dropEvent.node.getBoundingClientRect().x - mouseEvent.clientX;
-    // const dy = dropEvent.node.getBoundingClientRect().y - mouseEvent.clientY;
-    // card.x = mouseEvent.clientX + dx;
-    // card.y = mouseEvent.clientY + dy;
-    const moveData = {
-      type: "move",
-      username: this.username,
-      from: "hand",
-      to: "table",
-      card: {
-        value: {
-          rank: card.cardData.rank,
-          suit: card.cardData.suit,
-        },
-        x: card.x,
-        y: card.y,
-        isFaceDown: card.cardData.faceDown,
-      },
-      stack: null,
-    };
-
-    // const stack = positionToStack(mouseEvent.clientX, mouseEvent.clientY);
-    // if (stack) {
-    //   moveData.to = "stack";
-    //   moveData.stack = stack.id;
-    // }
-
-    // const playerHand = positionToPlayerHand(mouseEvent.clientX, mouseEvent.clientY);
-    this.sendToServer("move", moveData);
-
-    // check if inside bounds of any stack
+  // Check if a card was dropped on any stack; sends the move if so. Returns true if handled.
+  tryDropOnStack(card: Card, from: string): boolean {
     for (const stackName in this.stacks) {
       const stack = this.stacks[stackName];
-      const stackRect = stack.node.getBoundingClientRect();
-      if (card.x >= stackRect.left && card.x <= stackRect.right && card.y >= stackRect.top && card.y <= stackRect.bottom) {
+      const r = stack.node.getBoundingClientRect();
+      if (card.x >= r.left && card.x <= r.right && card.y >= r.top && card.y <= r.bottom) {
+        const { x, y } = this.toNorm(card.x, card.y);
         this.sendToServer("move", {
-          type: "move",
-          username: this.username,
-          from: "table",
-          to: "stack",
-          card: {
-            value: {
-              rank: card.cardData.rank,
-              suit: card.cardData.suit,
-            },
-            x: card.x,
-            y: card.y,
-            isFaceDown: card.cardData.faceDown,
-          },
+          type: "move", username: this.username,
+          from, to: "stack",
+          card: { value: { rank: card.cardData.rank, suit: card.cardData.suit }, x, y, isFaceDown: card.cardData.faceDown },
           stack: stack.stackId,
         });
-        return;
+        return true;
       }
     }
+    return false;
+  }
+
+  // ── Misc ──────────────────────────────────────────────
+  handCardsReordered(player: Player, newOrder: CardData[]) {
+    this.sendToServer("reorder-hand", { playerId: player.playerId, order: newOrder });
+  }
+
+  getSelfPlayer(): Player | null {
+    return Object.values(this.players).find((p) => p.isPlayerSelf) ?? null;
   }
 
   sendMessage(message: string) {
-    this.sendToServer("chat", {
-      message,
-      username: this.username,
-    });
+    this.sendToServer("chat", { message, username: this.username });
   }
 
   sendToServer(type: string, data: any) {
@@ -348,8 +339,7 @@ export default class Game {
     this.updateStacks();
     this.updateCards();
     this.updatePlayers();
-    if (this.chat) {
+    if (this.chat)
       this.chat.renderMessages();
-    }
   }
 }
